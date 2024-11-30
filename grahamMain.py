@@ -77,43 +77,89 @@ def reconstruct_and_plot(model, sample_data, time_steps, num_neurons):
     reconstructed = reconstruction[0].reshape(time_steps, num_neurons)
     
     fig, axs = plt.subplots(2, 1, figsize=(10, 7))
-    axs[0].imshow(original.T, cmap='Greys', aspect='auto')
+    axs[0].imshow(original.T, cmap='Binary', aspect='auto')
     axs[0].set_title('Original Spike Train')
-    axs[1].imshow(reconstructed.T, cmap='Greys', aspect='auto')
+    axs[1].imshow(reconstructed.T, cmap='Binary', aspect='auto')
     axs[1].set_title('Reconstructed Spike Train')
     plt.show()
     
     return reconstruction, latent
 
 
+class SpikeDataset(Dataset):
+    def __init__(self, data):
 
+        # Extract data
+        self.freq = data['fs']
+        self.train = data['train'].item()
 
-num_neurons = 50
-time_steps = 100
-input_dim = num_neurons * time_steps
-latent_dim = 200
+        # Fix neuron IDs, may be missing some
+        self.neuron_ids = sorted(self.train.keys())
+        self.id_to_idx = {id: idx for idx, id in enumerate(self.neuron_ids)}
+        self.num_neurons = len(self.neuron_ids)
 
-dataset = SpikeTrainDataset(num_neurons=num_neurons, time_steps=time_steps)
-print(dataset[0])
+        # Time steps
+        self.time_bin_ms = 1
+        self.max_time = max(max(v) for v in self.train.values())
+        self.time_steps = int(self.max_time/self.time_bin_ms) + 1
 
+        # Convert to tensor
+        self.data = self.TrainToTensor()
+        
+    def TrainToTensor(self, time_limit=1000):
+        time_steps = min(self.time_steps, time_limit) if time_limit else self.time_steps
+        spike_tensor = torch.zeros((time_steps, self.num_neurons))
+        for neuron_id, spike_times in self.train.items():
+            indices = torch.floor(torch.tensor(spike_times)).long()
+            valid_indices = indices[indices < time_steps]
+            spike_tensor[valid_indices, self.id_to_idx[neuron_id]] = 1
+        return spike_tensor.unsqueeze(0)
+        
+    def getTrain(self):
+        return self.train
+        
+    def __len__(self):
+        return 1
+        
+    def __getitem__(self, idx):
+        return self.data[idx]
+        
+    def getShape(self):
+        return self.data.shape
 
-# Load data
+    
 fname = "data.npz"
 data = np.load(fname, allow_pickle=True)
-sample_freq = data['fs']              
-spike_train = data['train'].item()    
+spike_data = SpikeDataset(data)
+spike_data.TrainToTensor()
+print(spike_data.getShape())
+
+
+
+
+
+
+
+
+# loader = DataLoader(dataset, batch_size=1)
+
+
+
+
+
+
+# num_neurons = 50
+# time_steps = 100
+# input_dim = num_neurons * time_steps
+# latent_dim = 200
+
+# dataset = SpikeTrainDataset(num_neurons=num_neurons, time_steps=time_steps)
+# print(dataset[1].shape)
 
 # Shorten spike train
 # print(spike_train)
 
 # Create dataset
-
-
-
-
-
-
-
 
 # train_loader = DataLoader(dataset, batch_size=5, shuffle=True)
 
