@@ -79,13 +79,19 @@ def train_pattern_generator(model, data_loader, num_epochs, learning_rate=0.001)
             # MSE Loss between input and output
             loss = criterion(output, batch)  # Compare with input sequence
 
+            target_pop = batch.mean(dim=2)  # Target population rate
+            output_pop = output.mean(dim=2)  # Generated population rate
+            
+            # MSE Loss between target and output population rates
+            pop_loss = criterion(output_pop, target_pop)
+            
             # Sparse loss to encourage sparsity in the output   
             sparse_loss = torch.mean(torch.abs(output))
 
             max_rate_loss = torch.mean(torch.relu(output.mean(dim=0) - 0.3))
 
             # Combine losses
-            total_loss = loss + sparse_loss * 50 + max_rate_loss * 50
+            total_loss = loss + sparse_loss + pop_loss + max_rate_loss
 
             loss.backward()
             optimizer.step()
@@ -180,3 +186,6 @@ for i in range(generated_data.shape[1]):  # Iterate over neurons
 plt.plot(np.sum(generated_data, axis=1), color='black', linewidth=2, alpha=0.2)
 plt.tight_layout()
 plt.show()
+
+
+

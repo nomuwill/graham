@@ -8,61 +8,56 @@ import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 
 class PatternGenerator(nn.Module):
-    def __init__(self, num_input=182, num_hidden=256, beta=0.5, threshold=0.1):
+    def __init__(self, num_input=182, num_hidden=256, beta=0.5, threshold=0.5):
         super().__init__()
         self.num_neurons = num_input
         self.num_hidden = num_hidden
         
         self.pattern_init = nn.Linear(1, num_input)
-        self.fc1 = nn.Linear(num_input, num_hidden)
+
+        self.lstm = nn.LSTM(num_input, num_hidden, batch_first=True)
+        self.fc_out = nn.Linear(num_hidden, num_input)
         self.lif1 = snn.Leaky(beta=beta, threshold=threshold)
-        self.fc2 = nn.Linear(num_hidden, num_input)
-        self.lif2 = snn.Leaky(beta=beta, threshold=threshold)
-        self.fc_recurrent = nn.Linear(num_input, num_input)
         
     def generate(self, num_steps=50, batch_size=1):
 
         # Generate initial pattern from random seed
         seed = torch.randn(batch_size, 1)
         current_pattern = torch.tanh(self.pattern_init(seed))
+
+        # Initialize LSTM hidden state
+        hidden = (torch.zeros(1, batch_size, self.num_hidden), 
+                  torch.zeros(1, batch_size, self.num_hidden))
         
         membrane1 = self.lif1.init_leaky()
-        membrane2 = self.lif2.init_leaky()
         
         patterns = []
-        for step in range(num_steps):
 
-            # Generate next pattern through SNN
-            current1 = self.fc1(current_pattern)
-            spike1, membrane1 = self.lif1(current1, membrane1)
+        for step in range(num_steps):
             
-            current2 = self.fc2(spike1)
-            spike2, membrane2 = self.lif2(current2, membrane2)
-            
-            # Recurrent connection influences next pattern
-            recurrent = self.fc_recurrent(spike2) * 5
-            current_pattern = torch.tanh(recurrent + current_pattern)
-            
+            # LSTM process current pattern
+            lstm_out, hidden = self.lstm(current_pattern.unsqueeze(1), hidden)
+
+            spike_input = self.fc_out(lstm_out.squeeze(1))
+            spike_output, membrane1 = self.lif1(spike_input, membrane1)
+
             patterns.append(current_pattern)
+
+            current_pattern = spike_output
             
         return torch.stack(patterns, dim=0)
 
+
     def forward(self, x):
+
+        # Process temporal spike sequences (training mode)
+        # x has shape: (time_steps, batch_size, num_input)
+        lstm_out, _ = self.lstm(x)
+        spike_input = self.fc_out(lstm_out)
         
-        sequence = []
-        membrane1 = self.lif1.init_leaky()
-        membrane2 = self.lif2.init_leaky()
-        
-        for t in range(x.size(0)):
-            current1 = self.fc1(x[t])
-            spike1, membrane1 = self.lif1(current1, membrane1)
-            
-            current2 = self.fc2(spike1)
-            spike2, membrane2 = self.lif2(current2, membrane2)
-            
-            sequence.append(spike2)
-            
-        return torch.stack(sequence, dim=0)
+        # Process spikes through LIF neuron layer
+        spike_output, _ = self.lif1(spike_input, self.lif1.init_leaky())
+        return spike_output
     
 
 def train_pattern_generator(model, data_loader, num_epochs, learning_rate=0.001):
@@ -136,6 +131,12 @@ class SpikeDataClass(Dataset):
 def prepare_data(data, batch_size=32):
     dataset = SpikeDataClass(data)
     return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+
+
+
+
+
 
 
 # Load data
